@@ -20,6 +20,8 @@ A lightweight, POM structured test automation framework for Python + Appium, inc
 
 🔧 Features
 
+afw setup — setup all mobile dependencies: node js, appium, uiAutomatior2
+
 afw init <project> — bootstrap a complete appiumfw project scaffold
 
 afw create-testsuite <name> — generate boilerplate YAML test suite & .py for its test suite hook
@@ -50,23 +52,28 @@ pip install -e .
 
 🚀 Quick Start
 
-1. Scaffold a new project
+1. Setup mobile project
+afw setup
+
+2. Scaffold a new project
 
 afw init myproject
 cd myproject
 
-2. Create testsuite/feature/case
+3. Create testsuite/feature/case
 
 afw create-testsuite login
 afw create-feature login
 afw implement-feature login
 
-3. Add test logic in testcases/, steps/, etc.
+4. Add test logic in testcases/, steps/, etc.
 
-4. Run tests
+5. Run tests
 
 afw run features/login.feature        # via behave
 afw run testsuites/login.yml         # via runner
+
+after that, choose the mobile device, or set it directly in `deviceName` at settings/appium.properties
 
 🌐 API Testing Example
 

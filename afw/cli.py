@@ -1,10 +1,17 @@
 import os
+from time import time
+from urllib.parse import urlparse
 from dotenv import load_dotenv
+import requests
 import typer
 import shutil
 from pathlib import Path
 from appiumfw.utils import render_template
 from appiumfw import run
+import subprocess
+from InquirerPy import inquirer
+from appiumfw import config
+
 
 app = typer.Typer()
 
@@ -12,6 +19,101 @@ app = typer.Typer()
 BASE_DIR = Path(__file__).parent
 TEMPLATE_PROJECT_DIR = BASE_DIR / "templates" / "project"
 TEMPLATE_JINJA_DIR = BASE_DIR / "templates" / "jinja"
+
+# Settings directory within user's project
+SETTINGS_DIR = Path.cwd() / "settings"
+APPIUM_PROPS = SETTINGS_DIR / "appium.properties"
+
+
+def get_connected_devices():
+    """Use adb to list connected device IDs"""
+    try:
+        output = subprocess.check_output(["adb", "devices"], universal_newlines=True)
+    except Exception:
+        return []
+    devices = []
+    for line in output.splitlines()[1:]:
+        if not line.strip():
+            continue
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == 'device':
+            devices.append(parts[0])
+    return devices
+
+
+def choose_device(devices: list[str]) -> str:
+    """Prompt user to choose a device via arrow keys"""
+    if not devices:
+        typer.secho("❌ No connected devices found", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    choice = inquirer.select(
+        message="Select device:",
+        choices=devices,
+        default=devices[0]
+    ).execute()
+    return choice
+
+
+def write_device_property(device_name: str):
+    """Update only the deviceName in appium.properties"""
+    SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
+    props = []
+    if APPIUM_PROPS.exists():
+        props = APPIUM_PROPS.read_text().splitlines()
+    updated = False
+    new_lines = []
+    for line in props:
+        if line.strip().startswith('deviceName='):
+            new_lines.append(f'deviceName={device_name}')
+            updated = True
+        else:
+            new_lines.append(line)
+    if not updated:
+        new_lines.append(f'deviceName={device_name}')
+    APPIUM_PROPS.write_text("\n".join(new_lines) + "\n")
+    typer.secho(f"✅ Updated deviceName={device_name} in {APPIUM_PROPS}", fg=typer.colors.GREEN)
+
+def ensure_appium_server():
+    """Ensure an Appium server is running, otherwise start one"""
+    url = config.get("appium_url", "http://localhost:4723/wd/hub")
+    status_url = url.rstrip('/') + '/status'
+    try:
+        if requests.get(status_url, timeout=2).status_code == 200:
+            return
+    except Exception:
+        pass
+
+    # Parse host and port
+    parsed = urlparse(url)
+    host = parsed.hostname or '0.0.0.0'
+    port = parsed.port or 4723
+    typer.secho(f"⚙️  Starting Appium server at {host}:{port}", fg=typer.colors.YELLOW)
+    cmd = f"appium --address {host} --port {port}"
+    try:
+        # Use shell=True for Windows to pick up appium.cmd
+        subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        # fallback to npx if installed
+        try:
+            subprocess.Popen(f"npx appium --address {host} --port {port}", shell=True,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            typer.secho(
+                "❌ Could not start Appium. Ensure 'appium' or 'npx appium' is in your PATH.",
+                fg=typer.colors.RED
+            )
+            raise typer.Exit(1)
+    # Wait for server to be ready
+    for _ in range(10):
+        try:
+            if requests.get(status_url, timeout=2).status_code == 200:
+                typer.secho("✅ Appium server is up", fg=typer.colors.GREEN)
+                return
+        except Exception:
+            time.sleep(1)
+    typer.secho("❌ Failed to start Appium server", fg=typer.colors.RED)
+    raise typer.Exit(1)
+
 
 @app.command()
 def init(project_name: str):
@@ -153,7 +255,6 @@ def implement_feature(name: str):
     typer.secho(f"✅ Implemented feature steps for: {name}", fg=typer.colors.GREEN)
 
 
-
 @app.command("run")
 def run_command(
     target: str,
@@ -166,11 +267,107 @@ def run_command(
             typer.secho(f"❌ Env file not found: {env_file}", fg=typer.colors.RED)
             raise typer.Exit(1)
         load_dotenv(dotenv_path=env_file, override=True)
+    
+    # Start Appium server if needed
+    ensure_appium_server()
 
+    # Read default deviceName from appium.properties if present
+    device_name = config.get("deviceName", "")
+    # If a placeholder or empty, prompt selection
+    if not device_name or device_name.lower() in ('', 'auto', 'detect'):
+        devices = get_connected_devices()
+        device_name = choose_device(devices)
+        write_device_property(device_name)
     # Execute the run
     run(target)
 
+@app.command()
+def select_device():
+    devices = get_connected_devices()
+    device_name = choose_device(devices)
+    write_device_property(device_name)    
 
+@app.command()
+def setup():
+    """Install required dependencies for mobile testing"""
+    def install_nodejs_on_windows():
+        import tempfile
+        import urllib.request
+
+        NODE_URL = "https://nodejs.org/dist/v20.11.1/node-v20.11.1-x64.msi"  # LTS version
+        temp_dir = tempfile.gettempdir()
+        installer_path = os.path.join(temp_dir, "nodejs_installer.msi")
+
+        typer.secho("⬇️ Downloading Node.js installer...", fg=typer.colors.YELLOW)
+        urllib.request.urlretrieve(NODE_URL, installer_path)
+
+        typer.secho("⚙️ Running Node.js installer (silent)...", fg=typer.colors.YELLOW)
+        try:
+            subprocess.run(
+                ["msiexec", "/i", installer_path, "/qn", "/norestart"],
+                check=True,
+            )
+        except subprocess.CalledProcessError:
+            typer.secho("❌ Failed to install Node.js. Please install manually.", fg=typer.colors.RED)
+            raise typer.Exit(1)
+
+        # Confirm npm is available
+        try:
+            subprocess.run("npm --version", shell=True, check=True, stdout=subprocess.DEVNULL)
+            typer.secho("✅ Node.js installed successfully", fg=typer.colors.GREEN)
+        except subprocess.CalledProcessError:
+            typer.secho("❌ Node.js installed but not in PATH. Restart terminal or set PATH manually.", fg=typer.colors.RED)
+            raise typer.Exit(1)
+
+    def install_nodejs_on_posix():
+        # macOS/Linux fallback
+        if shutil.which('brew'):
+            subprocess.run("brew install node", shell=True, check=True)
+        elif shutil.which('apt'):
+            subprocess.run("sudo apt update && sudo apt install -y nodejs npm", shell=True, check=True)
+        else:
+            typer.secho("❌ Could not install Node.js automatically. Install it manually from https://nodejs.org/", fg=typer.colors.RED)
+            raise typer.Exit(1)
+            
+    # Ensure Node.js & npm
+    try:
+        subprocess.run("npm --version", shell=True, check=True, stdout=subprocess.DEVNULL)
+        typer.secho("✅ npm detected", fg=typer.colors.GREEN)
+    except subprocess.CalledProcessError:
+        typer.secho("⚙️ npm not found. Installing Node.js...", fg=typer.colors.YELLOW)
+        if os.name == 'nt':
+            install_nodejs_on_windows()
+        else:
+            install_nodejs_on_posix()
+    
+    # Check & install Appium dependencies only if not installed
+    def is_npm_package_installed(package: str) -> bool:
+        try:
+            result = subprocess.run(
+                f"npm list -g {package}",
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            return package in result.stdout
+        except Exception:
+            return False
+
+    deps = ["appium", "appium-uiautomator2-driver"]
+    for pkg in deps:
+        if is_npm_package_installed(pkg):
+            typer.secho(f"✅ {pkg} already installed", fg=typer.colors.GREEN)
+        else:
+            typer.secho(f"⬇️ Installing {pkg}...", fg=typer.colors.YELLOW)
+            try:
+                subprocess.run(f"npm install -g {pkg}", shell=True, check=True)
+                typer.secho(f"✅ {pkg} installed", fg=typer.colors.GREEN)
+            except subprocess.CalledProcessError:
+                typer.secho(f"❌ Failed to install {pkg}. Make sure npm works.", fg=typer.colors.RED)
+                raise typer.Exit(1)
+
+    typer.secho("✅ All mobile dependencies are ready", fg=typer.colors.GREEN)
 
 @app.command()
 def serve(port: int = typer.Option(None, help="Port to run the server")):

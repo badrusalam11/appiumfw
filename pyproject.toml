@@ -19,7 +19,11 @@ dependencies = [
   "apscheduler",
   "jinja2",
   "requests",
-  "python-dotenv"
+  "python-dotenv",
+  "Appium-Python-Client",
+  "behave",
+  "reportlab",
+  "InquirerPy"
 ]
 
 [project.scripts]
