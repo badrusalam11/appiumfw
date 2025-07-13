@@ -3,7 +3,7 @@ appiumfw - A lightweight Appium framework with structured runner,
 report generator, and POM-based test execution. Inspired by Katalon.
 """
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 import sys
 from pathlib import Path
