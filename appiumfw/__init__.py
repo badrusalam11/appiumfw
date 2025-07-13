@@ -1,9 +1,9 @@
 """
-appiumfw - A lightweight Selenium framework with structured runner,
+appiumfw - A lightweight Appium framework with structured runner,
 report generator, and POM-based test execution. Inspired by Katalon.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 import sys
 from pathlib import Path

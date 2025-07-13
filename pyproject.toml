@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "appiumfw"
-version = "0.1.0"
-description = "Appiumfw - A minimal Selenium test framework that adapt POM"
+version = "0.1.1"
+description = "Appiumfw - A minimal appium test framework that adapt POM"
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
