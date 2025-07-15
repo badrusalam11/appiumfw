@@ -1,5 +1,5 @@
 import os
-from time import time
+import time
 from urllib.parse import urlparse
 from dotenv import load_dotenv
 import requests
@@ -268,16 +268,6 @@ def run_command(
             raise typer.Exit(1)
         load_dotenv(dotenv_path=env_file, override=True)
     
-    # Start Appium server if needed
-    ensure_appium_server()
-
-    # Read default deviceName from appium.properties if present
-    device_name = config.get("deviceName", "")
-    # If a placeholder or empty, prompt selection
-    if not device_name or device_name.lower() in ('', 'auto', 'detect'):
-        devices = get_connected_devices()
-        device_name = choose_device(devices)
-        write_device_property(device_name)
     # Execute the run
     run(target)
 

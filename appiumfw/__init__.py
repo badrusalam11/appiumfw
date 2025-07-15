@@ -3,7 +3,7 @@ appiumfw - A lightweight Appium framework with structured runner,
 report generator, and POM-based test execution. Inspired by Katalon.
 """
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 import sys
 from pathlib import Path
@@ -17,6 +17,9 @@ config = Config()  # global singleton instance
 
 def run(target=None):
     logger = Logger.get_logger()
+    
+    # precondition
+    check_dependencies()
 
     # grab argument
     if not target:
@@ -62,3 +65,17 @@ def run(target=None):
             " • a .feature file"
         )
         sys.exit(1)
+
+def check_dependencies():
+    from afw.cli import choose_device, ensure_appium_server, get_connected_devices, write_device_property
+
+        # Start Appium server if needed
+    ensure_appium_server()
+
+    # Read default deviceName from appium.properties if present
+    device_name = config.get("deviceName", "")
+    # If a placeholder or empty, prompt selection
+    if not device_name or device_name.lower() in ('', 'auto', 'detect'):
+        devices = get_connected_devices()
+        device_name = choose_device(devices)
+        write_device_property(device_name)
